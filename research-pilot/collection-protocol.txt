@@ -1,0 +1,140 @@
+Copyright 2026 Anas Chari
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+EXPLORATORY TRAINING COLLECTION — VERSION 3, 18 OCTOBER 2026
+
+Dataset: commons-lang-exploratory-training-20261018-v3
+Phase: exploratory_training. Efficacy eligibility remains false.
+
+This protocol prepares real longitudinal data, not an already trained model.
+The v2 technical calibration remains immutable and is not imported into v3.
+It observed 316 classes: 313 PASSED, 3 ABORTED and no FAILED class. There were
+91,987 successful leaves, 9 aborted leaves and 7 skipped leaves. Under the v2
+conservative aggregation, an aborted descendant makes a nonfailed class ABORTED.
+Consequently v2 supplied zero complete binary builds and zero positive labels.
+
+The three calibration-exposed classes below are excluded from a NEW exploratory
+policy/training panel before observing outcomes on the new upstream source:
+  org.apache.commons.lang3.time.FastDateFormat_PrinterTest
+  org.apache.commons.lang3.time.FastDateParser_TimeZoneStrategyTest
+  org.apache.commons.lang3.time.FastDatePrinterTest
+These exclusions are post hoc with respect to the v2 calibration. They narrow
+the population and prevent a confirmatory or whole-suite efficacy claim. The
+reason is the existing conditional JDK/locale assumptions, not an observed model
+advantage. ABORTED is never relabelled PASSED or FAILED. The exact name-based
+exclusion is fixed; every other discovered class, including future new classes,
+belongs to the panel. New aborts make the panel incomplete; no new exclusions
+are selected to obtain a fit. A future scope change needs a separately versioned
+dataset. Coverage and panel sizes are reported for each revision.
+
+The full original JUnit suite still runs and all original outcomes, leaf counts,
+durations, publication markers and ingestion times remain in the raw evidence.
+The panel event stream used for the frozen policies has a panel-only oracle.
+Excluded class observations are retained separately with actual publication and
+ingestion times. A panel-complete flag is not full known-leaf coverage and is not
+proof of all possible dynamically generated cases. Timings include observation
+and fsync overhead. JUnit controls actual execution order. Policies stay in shadow
+mode and do not change the suite or its class order.
+
+SOURCE SELECTION AND INDEPENDENCE
+
+The first selected new source is Apache commit
+45c80d99559017ea6efcb5db6156bb9a5c850d34, after calibration base
+c89cdf682fe21b0c39759cf58186ed5336a105d4. This revision already existed before
+the v3 protocol freeze. It is an exploratory development/training sample, not a
+prospective-change or confirmatory holdout. Selection preceded observing its
+instrumented test outcomes and used upstream chronology, not failures.
+Collector/fork SHA and upstream source SHA/tree are separate metadata fields.
+All original upstream tracked files must match the declared upstream revision;
+only newly added research-pilot files and the shadow workflow are permitted.
+Collection requires a clean checkout and an ancestor source commit. Immediately
+before preparation the workflow fetches master from the fixed public Apache URL;
+the declared source must also be an ancestor of that FETCH_HEAD. Its exact tip
+and fetch provenance are retained in the source audit.
+
+Subsequent primary samples are distinct newly selected upstream revisions on the
+same declared first-parent lineage, in chronological selection order. The v3
+training cohort remains exploratory; a confirmatory comparison requires a new
+future observation window and separately frozen evaluation protocol. Any skipped
+revision and its reason must be recorded before inspecting its test outcomes.
+Source ancestry is checked before collection. A repeated upstream SHA, a workflow
+retry, or a change only to collector files is not another independent build.
+Retries may diagnose a prior observation and retain their own attempt metadata;
+they do not inflate the primary sample count. Historical backfill, if needed,
+must be identified as replay rather than presented as prospective history.
+
+Run manually on the research branch. No schedule or unbounded batch is installed.
+Preserve actual failed primary runs: workflow success reports collection validity,
+not absence of test failures. Timeouts, incomplete panels and collection defects
+are retained and reported but do not count as complete training builds. Do not
+repeat one green revision 50 times or inject artificial failures to open a gate.
+
+HISTORY, TARGET AND ENVIRONMENT
+
+History must come from verified immutable v3 artifacts in the authorized fork,
+matching the frozen collector/configuration signature, original feature hashes,
+source lineage and actual publication/ingestion availability. Closed observations
+enter later decisions only when genuinely available at the cutoff. Original
+features are never recomputed using later labels. Technical calibration and
+synthetic checks stay outside the new research history.
+
+The target remains raw_failed at the declared class-panel level. This measures a
+raw JUnit class failure, not a reproduced defect, nonflaky failure, vulnerability
+or security incident. The frozen scorer rejects the reproduced_under_protocol
+target. Such a target would require a separately implemented frozen diagnosis
+pipeline with independent same-source reruns, comparable environments and a
+matching failure cause. A diagnostic retry never silently replaces a raw label.
+
+The environment scope is Ubuntu 24.04, Temurin 21, Python 3.12 and one JUnit class
+slot with parallel execution disabled and pinned scoring dependencies. Actual
+JDK, image, architecture and dependency versions are recorded. Do not silently
+pool an incompatible JDK/OS/harness change; document compatibility prospectively
+or create a separate cohort. Compilation and synthetic probes stay outside
+policy preparation; measured preparation and callback reserve remain explicit.
+
+FIT READINESS — FROZEN MODEL UNCHANGED
+
+The model implementation and its recorded SHA256 remain unchanged. A candidate
+refit needs at least 50 available prior COMPLETE binary-panel builds, at least
+20 raw failed class-execution rows in its last 200 complete builds, and both
+binary labels in each chronological partition. These are 20 positive class
+rows, not 20 failing builds. Split by build: first floor(0.6*n) for fitting,
+next floor(0.2*n) for selecting C, remainder for calibration. No shuffled split.
+
+Refits occur every 10 decision indices. Between them the original scheduled
+refit is reconstructed at its own cutoff using its original frozen snapshots;
+reconstruction cost is measured. With no excluded or unavailable builds, index50
+is the earliest candidate using 50 earlier builds. Incomplete panels, rare
+failures, missing labels in a temporal partition or numerical fit failure can
+postpone or prevent fitting. A data-readiness report does not itself fit a model.
+Until all gates pass and fitting succeeds, LOGIT retains its frozen B4 fallback.
+No training date or comparative improvement is promised. Zero real positives
+cannot support logistic fitting, calibration or a failure-recall comparison.
+
+After each collection, retain the full evidence and the data-only readiness
+report: unique source count, complete/incomplete panel counts and reasons,
+positive rows, last200 window, three partition counts, gaps and next scheduled
+refit. Review failure prevalence and project feasibility at a prespecified batch
+boundary rather than weakening gates after seeing outcomes. Expand to another
+justified project only through a separately recorded protocol and environment.
+
+Download and digest-verify every artifact before its configured 30-day expiry.
+Keep original ZIPs and manifests outside GitHub for the thesis. Cumulative JSON
+history has a 1GB safety ceiling: reaching it stops collection rather than
+truncating earlier samples. A larger archive design needs an explicit version.
+
+Checks:
+  python research-pilot/cohort.py --self-check
+  python research-pilot/cohort.py --history target/pilot/state.json
+Synthetic fixtures exercise guards; they are not evidence of real model training.

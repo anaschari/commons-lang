@@ -1,98 +1,71 @@
-Commons Lang prospective shadow pilot
+Commons Lang exploratory training collection version 3
 
-This fork runs an instrumented full JUnit class suite on GitHub Actions. It does
-not modify Apache upstream. The first launches are technical calibration and are
-excluded from efficacy claims. Workflow success means collection validity, not
-that every test passed. Actual test failures remain data and their process exit
-status is retained. Synthetic probe failures are kept in a separate artifact.
+This manual GitHub Actions workflow executes the complete original JUnit suite
+and observes a predeclared class panel. Read collection-protocol.txt for the
+population, exposure, source identity, label and training criteria. V1/v2
+calibration artifacts remain archived in separate datasets.
 
-Run the Prospective shadow pilot workflow on research/shadow-pilot. No recurring
-schedule or deployment is installed. The upstream source base is recorded in
-pilot.py; every run also records the actual fork commit and artifact provenance.
-Original project sources and pom.xml remain unchanged. A temporary .pilot-pom.xml
-adds JUnit Platform launcher to test dependencies, compiles the original test suite,
-and the pilot listener is compiled separately into target/test-classes.
+The three assumption-conditional classes named in cohort.py are excluded from
+the NEW policy/training panel before future outcomes. Every other discovered
+class remains included, including new classes. On the calibration revision this
+panel has313 classes inside316 full-suite classes. The original tests still run;
+no ABORTED outcome is changed into passed or failed. The full raw stream and
+excluded-observations.jsonl retain excluded results with live release/ingestion.
+population.json freezes both inventories before tests. Complete panel coverage
+is distinct from full_known_leaf_coverage and possible unregistered dynamic cases.
+This restricted exploratory population cannot establish whole-suite efficacy.
 
-PilotLauncher discovers one JUnit TestPlan for all .*Test classes, excludes the
-probe namespace, and runs that entire plan with Jupiter's own order. Java21 needs
-no project-specific JDK15 class exclusion. This harness uses the project's Java9
-module opens, Java21 agent flag and 1GB heap. It is an experimental runner
-configuration; its timings are not untouched upstream Maven CI timings.
-After the entire TestPlan and final listener callbacks finish, the launcher exits
-explicitly: some original tests leave non-daemon executor threads alive. The
-separate synthetic probe verifies this exit preserves test cleanup and evidence.
-The suite step has a 20-minute limit inside a 25-minute job, leaving time to retain
-incomplete evidence if execution times out. A timeout is never a complete build.
+To select the next source, merge a new chosen Apache master first-parent revision
+into research/shadow-pilot, preserving collector files. Commit/push any merge.
+Run Prospective shadow pilot on that branch, supplying its exact40-hex Apache SHA
+as upstream_sha. The collector/fork SHA is different from the upstream source SHA.
+Preparation fetches the official public Apache master, verifies its provenance,
+first-parent ancestry, clean checkout and unchanged original upstream files.
+Repeated source revisions and backward lineage are rejected. A workflow rerun
+is not another primary training build. Retain failed tests and incomplete panels.
+No recurring schedule, deployment or upstream pull request is installed.
 
-The entity is the outermost ClassSource container. Nested and dynamic descendants
-roll into that class. The class inventory is frozen in the TestPlan callback before
-any test runs. Dynamic method counts are not falsely claimed known in advance.
-Inventory lexical order is not the engine's planned order; chosen_ci_order stays
-null with a reason, and actual class starts are recorded separately.
+The unchanged frozen_model.py supplies13 features, five rules and LOGIT with B4
+fallback.35 snapshots include30 random-rule seeds. Fitting requires50 complete
+prior binary-panel builds,20 positive class rows in the latest200 complete builds,
+and both labels in every60/20/20 chronological block. Refit cadence stays10.
+training-readiness.json reports gaps and future cadence without fitting a model.
+Rare natural failures may keep the gate closed indefinitely. Do not force labels
+or inject faults into the natural collection. Passing revisions remain data.
 
-The live listener fsyncs a class payload then emits a publication marker. Python
-consumes that marker while the suite runs and records actual ingestion. The Java
-clock is a millisecond wall anchor plus monotonic deltas, with uncertainty in the
-inventory. Timings include observer callback/fsync overhead. Collection errors
-invalidate evidence and the workflow, but do not cancel the underlying suite.
+Each decision freezes actual inventory, features, policy scores/order, source,
+configuration and source-code hashes before execution. JUnit controls class order;
+planned engine order is unknown and actual starts are retained. The full TestPlan
+runs on Ubuntu24.04/Temurin21/Python3.12 with parallel execution disabled, the
+upstream module opens,1GB heap and pinned numerical dependencies. Original
+pom.xml stays unchanged; a temporary POM adds the launcher API and preserves RAT.
+Listener callbacks use fsynced stream I/O that preserves interrupted test flags.
+After all callbacks finish the standalone launcher exits despite leaked workers.
+Separate synthetic probes check these cases and never enter research history.
+Observed timings include observer overhead and differ from untouched Maven CI.
 
-PASSED/FAILED class observations become raw passed/failed. ABORTED and SKIPPED
-remain separate nonbinary outcomes. An entirely skipped class has unknown start
-and runtime, never an invented zero. Leaf assertion/error/skip/abort/unstarted
-counts are retained. Class-level complete means each inventoried class has an
-observed binary result. full_known_leaf_coverage is a separate stricter field; disabled
-methods are never silently claimed executed. Missing, skipped or aborted primary
-classes keep suite status incomplete and prevent complete-build training.
+History uses only shadow-pilot-v3-state-N artifacts with identical frozen collector
+signature. GitHub artifact created_at supplies candidate chronology, not numeric
+artifact IDs. The archive digest, manifest, workflow/branch/attempt, source identity,
+source lineage and original snapshots are verified. Corruption, incompatible
+signature, duplicate primary source or expired required history fails closed.
+Download original archives before30-day expiry. Cumulative JSON is capped at1GB;
+version the archive design if it reaches that ceiling, without dropping history.
 
-35 policy snapshots cover B1, 30 B2 seeds, B3, B4, B5 and LOGIT. Raw failure target,
-features, fitting and ordering reuse frozen_model.py byte-for-byte. The first run
-has no past positive costs: cost features and estimated budget are null, LOGIT uses
-B4 fallback, and no budget recall is reported. Future fitting needs the unchanged
-50-build/20-positive and chronological-block criteria. Later refit state is
-reconstructed from original snapshots at its original scheduled cutoff; the
-extra reconstruction work is measured. No retrospective dataset seeds the pilot.
+Measured acquisition/features/refit/inference/ranking/explanation/finalization
+costs are retained. A separate1-second callback-tail reserve is charged and checked.
+Install/compile/probe/source-setup costs are distinct from decision preparation.
+The first decision has unknown historical costs and no defined budget recall.
+The target is raw_failed on the named panel, without reproduced-fault diagnosis.
+No efficacy, security benefit, compute saving or confirmatory result is established.
 
-The v2 contract derives from the earlier kit, adding an unknown engine planned
-order and honest skipped/aborted class timing. Run local checks with Python3:
+Local checks:
   python research-pilot/check_collector.py
+  python research-pilot/cohort.py --self-check
   python research-pilot/validate.py --self-check
   python research-pilot/policies.py --self-check
-The scoring check needs requirements.txt. The JVM probe runs inside Actions.
+The scoring check needs requirements.txt; Java probes run in Actions.
 
-History comes only from a verified valid collection artifact in this repository
-and branch, an ancestor commit, an archive matching GitHub's SHA256 digest, and an
-identical collector/config signature. Artifacts are checked by immutable attempt,
-independently of a run's mutable conclusion, so rerunning a workflow cannot erase
-an earlier valid attempt. It rejects synthetic history and validates all references
-before scoring. Workflow completion never filters out failed tests.
-A new dataset, commons-lang-technical-20261018-v2, uses shadow-pilot-v2-state-N
-artifacts. Earlier calibration attempts remain archived separately. Version1's
-first valid collection exposed that GitHub artifact IDs are not chronological;
-v2 orders candidates by GitHub publication time, with immutable attempt checks.
-This version change resets history explicitly and does not change any policy,
-model, original test, or failure label to improve comparative results.
-A collector/config change requires a separately recorded dataset; it must not
-silently inherit incompatible observations. Artifacts expire after 30 days: download
-and preserve them for research. No publication or failure-diagnosis rule is inferred
-from file modification times or build start+duration. No nonflaky diagnosis, model
-superiority, production saving or confirmatory validation is established.
-History exports have a 1GB safety ceiling. Reaching that ceiling stops collection
-instead of silently discarding observations; a larger archival design then needs
-an explicit versioned change.
-
-Measured policy component totals and the conservative one second callback tail
-reserve are separate. preparation_charged_s adds both; actual callback tail and
-whole collector preparation are measured after execution starts and reported.
-A tail reserve overrun invalidates the technical collection rather than silently
-undercharging a future budget. Dependency installation, compilation and the
-synthetic probe remain separate from decision preparation.
-
-Licensing: new pilot implementation and synthetic JSONL fixture are distributed
-under this repository Apache License2.0. The JSONL fixture is listed as a data
-exclusion in the temporary POM because comments would break its event format.
-The temporary POM preserves the original Apache license comment. RAT remains
-enabled. frozen_model.py retains its original research bytes and recorded hash.
-
-Known-leaf coverage concerns discovered/registered leaves only. A failed dynamic
-factory can leave potential unregistered cases unknown; this is not proof of full
-method-level coverage or a complete counterfactual fault oracle.
+Licensing: new pilot code and JSONL fixture use Apache License2.0. The exact JSONL
+data exclusion is added to the temporary POM; all original RAT exclusions and
+license comments remain. frozen_model.py keeps its original recorded bytes.

@@ -1,6 +1,11 @@
 name: Prospective shadow pilot
 on:
   workflow_dispatch:
+    inputs:
+      upstream_sha:
+        description: Exact Apache master revision already merged into this branch
+        required: true
+        type: string
 permissions:
   contents: read
   actions: read
@@ -38,8 +43,13 @@ jobs:
           python research-pilot/check_collector.py
           python research-pilot/validate.py --self-check
           python research-pilot/policies.py --self-check
+          python research-pilot/cohort.py --self-check
       - name: Prepare immutable collection metadata
-        run: python research-pilot/pilot.py prepare
+        env:
+          PILOT_UPSTREAM_SHA: ${{ inputs.upstream_sha }}
+        run: |
+          git fetch --no-tags https://github.com/apache/commons-lang.git master
+          python research-pilot/pilot.py prepare
       - name: Compile unchanged project tests and listener
         run: |
           mvn -f .pilot-pom.xml --batch-mode --no-transfer-progress test-compile dependency:build-classpath -Dmdep.outputFile=target/pilot-classpath.txt -DincludeScope=test > target/compile.log 2>&1
@@ -57,7 +67,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: shadow-pilot-v2-state-${{ github.run_attempt }}
+          name: shadow-pilot-v3-state-${{ github.run_attempt }}
           path: target/pilot/
           if-no-files-found: warn
           retention-days: 30

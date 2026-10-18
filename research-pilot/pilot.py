@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Run a prospective class-level technical collector without controlling test order."""
+"""Collect a frozen exploratory class panel while observing the full JUnit suite."""
 import argparse
 import hashlib
 import json
@@ -27,20 +27,21 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 import zipfile
+from cohort import DATASET_ID, PHASE, EXCLUDED_CLASSES, panel_inventory, audit_source, readiness
 
 HERE=Path(__file__).resolve().parent
 REPO=HERE.parent
 OUTPUT=REPO/'target/pilot'
 UPSTREAM='c89cdf682fe21b0c39759cf58186ed5336a105d4'
 ENVIRONMENT='ubuntu-24.04-temurin-21-python-3.12-single-junit-class-slot'
-CONFIG={'schema_version':2,'project':'commons-lang','phase':'technical_calibration',
-        'dataset_id':'commons-lang-technical-20261018-v2',
+CONFIG={'schema_version':2,'project':'commons-lang','phase':PHASE,
+        'dataset_id':DATASET_ID,'excluded_policy_classes':EXCLUDED_CLASSES,
         'efficacy_eligible':False,'unit':'outermost JUnit ClassSource container',
         'upstream_base':UPSTREAM,'budgets':[.1,.2,.3],
         'full_suite':True,'jupiter_parallel':False,'heap':'-Xmx1G',
         'class_filter':'.*Test excluding org.researchpilot.*',
         'target':'raw JUnit failed class; no reproducibility diagnosis',
-        'suite_complete':'every frozen class has a binary observed result; leaf coverage reported separately',
+        'suite_complete':'every frozen panel class has a binary observed result; whole-suite exclusions and leaf coverage reported separately',
         'publication':'fsynced class payload followed by live publication marker and collector ingestion',
         'cost_scope':'discovery and freeze pipeline charged; install/compile/diagnostic probe separate'}
 JAVA_FLAGS=['-Xmx1G','-XX:+EnableDynamicAgentLoading']+sum((['--add-opens','java.base/'+p+'=ALL-UNNAMED'] for p in ('java.lang.reflect','java.lang','java.util','java.time','java.time.chrono','java.util.concurrent.atomic')),[])
@@ -65,7 +66,7 @@ def protected(p):
     p=Path(p).resolve();require(p.is_relative_to((REPO/'target').resolve()) and p!=(REPO/'target').resolve(),'output must be dedicated under target');return p
 
 def signature():
-    paths=sorted([HERE/'pilot.py',HERE/'policies.py',HERE/'validate.py',HERE/'frozen_model.py',HERE/'requirements.txt',REPO/'.github/workflows/shadow-pilot.yml',HERE/'java/META-INF/services/org.junit.platform.launcher.TestExecutionListener']+list((HERE/'java').rglob('*java')))
+    paths=sorted([HERE/'pilot.py',HERE/'policies.py',HERE/'cohort.py',HERE/'collection-protocol.txt',HERE/'validate.py',HERE/'frozen_model.py',HERE/'requirements.txt',REPO/'.github/workflows/shadow-pilot.yml',HERE/'java/META-INF/services/org.junit.platform.launcher.TestExecutionListener']+list((HERE/'java').rglob('*java')))
     files={str(p.relative_to(REPO)):sha(p) for p in paths}
     return digest({'files':files,'configuration':CONFIG,'environment':ENVIRONMENT}),files
 
@@ -75,6 +76,7 @@ def prepare():
     OUTPUT.mkdir(parents=True)
     commit=run_text(['git','rev-parse','HEAD']);commitat=time.time()
     require(run_text(['git','rev-parse','--abbrev-ref','HEAD'])=='research/shadow-pilot','wrong research branch')
+    source=audit_source(REPO,os.environ.get('PILOT_UPSTREAM_SHA',''))
     sig,files=signature()
     env={'profile':ENVIRONMENT,'java':run_text(['java','-version']),'maven':run_text(['mvn','--version']),
          'python':sys.version,'platform':platform.platform(),'cpu_count':os.cpu_count(),'observed_load':list(os.getloadavg()) if hasattr(os,'getloadavg') else None,'ImageOS':os.environ.get('ImageOS'),'ImageVersion':os.environ.get('ImageVersion'),'RUNNER_ARCH':os.environ.get('RUNNER_ARCH'),
@@ -84,6 +86,7 @@ def prepare():
     meta={'commit':commit,'commit_captured_at':commitat,'run_id':os.environ['GITHUB_RUN_ID']+'-attempt-'+os.environ.get('GITHUB_RUN_ATTEMPT','1'),
           'workflow_run_id':int(os.environ['GITHUB_RUN_ID']),'workflow_run_attempt':int(os.environ.get('GITHUB_RUN_ATTEMPT','1')),
           'configuration':CONFIG,'signature':sig,'files':files,'environment':env,
+          'upstream_source_sha':os.environ['PILOT_UPSTREAM_SHA'],'source_audit':source,
           'github_run_url':os.environ['GITHUB_SERVER_URL']+'/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+os.environ['GITHUB_RUN_ID']}
     write(OUTPUT/'metadata.json',meta)
     compile_pom(REPO)
@@ -111,7 +114,7 @@ def restore_history(meta):
     artifacts=sorted((a for page in pages for a in page['artifacts']),key=lambda a:(a['created_at'],a['id']),reverse=True)
     prior=[];skipped=[];provenance={'status':'no_prior_valid_collection'}
     for artifact in artifacts:
-        match=re.fullmatch(r'shadow-pilot-v2-state-([1-9][0-9]*)',artifact['name'])
+        match=re.fullmatch(r'shadow-pilot-v3-state-([1-9][0-9]*)',artifact['name'])
         if match is None:continue
         source=artifact['workflow_run'];rid=source['id'];attempt=int(match.group(1))
         if source['head_branch']!='research/shadow-pilot':continue
@@ -165,6 +168,10 @@ def restore_history(meta):
         from validate import validate
         validate(prior)
         decisions=[r for r in prior if r['type']=='decision']
+        require(decisions[-1]['upstream_source_sha']==state['upstream_source_sha']==metadata['upstream_source_sha']==summary['upstream_source_sha'],
+                'prior upstream source identity mismatch')
+        require(state['dataset_id']==metadata['configuration']['dataset_id']==summary['dataset_id']==DATASET_ID
+                and all(d['dataset_id']==DATASET_ID and d['phase']==PHASE for d in decisions),'prior dataset/phase mismatch')
         require(decisions[-1]['run_id']==metadata['run_id'] and decisions[-1]['commit']==run['head_sha']
                 and all(r['frozen_hashes']['collector']==meta['signature'] for r in decisions),
                 'prior history does not end at declared source or mixes collector signatures')
@@ -172,12 +179,16 @@ def restore_history(meta):
                     'artifact_id':artifact['id'],'archive_sha256':sha(dest),'event_count':len(prior)}
         dest.unlink();break
     provenance['skipped_artifacts']=skipped
+    readiness(prior)  # Reject repeated source identities rather than inflating warmup support.
     write(OUTPUT/'history.json',prior);write(OUTPUT/'history-provenance.json',provenance)
 
 def freeze(inventory_path,output):
     output=protected(output);meta=json.loads((output/'metadata.json').read_text())
-    inv=json.loads(Path(inventory_path).read_text());inventory=sorted(x['class_id'] for x in inv['classes'])
-    require(inventory and len(set(inventory))==len(inventory),'empty/duplicate discovered class inventory')
+    inv=json.loads(Path(inventory_path).read_text());full_inventory=sorted(x['class_id'] for x in inv['classes'])
+    require(full_inventory and len(set(full_inventory))==len(full_inventory),'empty/duplicate discovered class inventory')
+    inventory,excluded=panel_inventory(full_inventory)
+    write(output/'population.json',{'dataset_id':DATASET_ID,'full_inventory':full_inventory,
+          'panel_inventory':inventory,'excluded_classes':excluded,'scope':'predeclared class panel; full original JUnit plan still executes'})
     prior=json.loads((output/'history.json').read_text());require(all(r['synthetic'] is False for r in prior),'synthetic history')
     start=json.loads((output/'run-start.json').read_text())['preparation_started_at']
     # Import/acquisition startup is included in the measured acquisition phase.
@@ -187,7 +198,8 @@ def freeze(inventory_path,output):
     final_start=time.perf_counter()
     decision={'schema_version':2,'synthetic':False,'type':'decision','id':did,'run_id':meta['run_id'],'commit':meta['commit'],
        'project':'commons-lang','environment':ENVIRONMENT,'mode':'shadow','ci_order_changed':False,
-       'technical_calibration':True,'efficacy_eligible':False,'phase':'technical_calibration',
+       'technical_calibration':False,'efficacy_eligible':False,'phase':PHASE,'dataset_id':DATASET_ID,
+       'upstream_source_sha':meta['upstream_source_sha'],'population_scope':'predeclared panel in population.json; excluded classes remain in the full logger',
        'decision_index':index,'history_cutoff_at':cutoff,'preparation_started_at':start,
        'inventory_captured_at':inv['inventory_at_epoch_ns']/1e9,'commit_captured_at':meta['commit_captured_at'],
        'features_frozen_at':result['features_frozen_at'],'inventory':inventory,'inventory_sha256':digest(inventory),
@@ -217,25 +229,30 @@ def result_event(decision,data,pub,ingested):
     require(math.isfinite(ingested) and finished<=published<=ingested,'publication/ingestion clock inversion')
     began=data['started_at_epoch_ns'];duration=data['duration_ns']
     outcome={'PASSED':'passed','FAILED':'failed','ABORTED':'aborted','SKIPPED':'skipped'}[data['outcome']]
-    return {'schema_version':2,'synthetic':False,'technical_calibration':True,'efficacy_eligible':False,
+    return {'schema_version':2,'synthetic':False,'technical_calibration':False,'efficacy_eligible':False,
       'type':'result','id':decision['id']+':result:'+data['class_id'],'decision_id':decision['id'],'run_id':decision['run_id'],'commit':decision['commit'],
       'recorded_at':ingested,'test_id':data['class_id'],'started_at':began/1e9 if began is not None else None,
       'finished_at':finished,'duration_s':duration/1e9 if duration is not None else None,'slot':1 if began is not None else None,
       'raw_outcome':outcome,'junit_class_observation':data,'published_at':published,'ingested_at':ingested,'available_at':ingested,
       'publication_evidence':'live-raw.jsonl#sequence='+str(pub['sequence'])+'; after class payload fsync',
-      'ingestion_evidence':'events.jsonl#'+decision['id']+':result:'+data['class_id'],
+      'ingestion_evidence':('excluded-observations.jsonl#' if data['class_id'] in EXCLUDED_CLASSES else 'events.jsonl#')+decision['id']+':result:'+data['class_id'],
       'result_evidence':'live-raw.jsonl#sequence='+str(data['sequence'])}
 
 def collect():
     meta=json.loads((OUTPUT/'metadata.json').read_text());write(OUTPUT/'run-start.json',{'preparation_started_at':time.time()})
     restore_history(meta)
+    prior=json.loads((OUTPUT/'history.json').read_text())
+    revisions=[r['upstream_source_sha'] for r in prior if r['type']=='decision']
+    require(meta['upstream_source_sha'] not in revisions,'source revision already observed; a retry is not a new primary training build')
+    if revisions:
+        subprocess.run(['git','merge-base','--is-ancestor',revisions[-1],meta['upstream_source_sha']],cwd=REPO,check=True)
     os.environ.pop('GH_TOKEN',None)
     cp='target/test-classes:target/classes:'+(REPO/'target/pilot-classpath.txt').read_text().strip()
     command=['java']+JAVA_FLAGS+['-cp',cp,'org.researchpilot.PilotLauncher','target/test-classes']
     env=dict(os.environ,PILOT_OUTPUT_DIR=str(OUTPUT),PILOT_BRIDGE_SCRIPT=str(HERE/'pilot.py'),PILOT_PYTHON=sys.executable)
     write(OUTPUT/'execution-command.json',{'argv':command,'actual_environment':meta['environment']})
     process=subprocess.Popen(command,cwd=REPO,env=env)
-    raw=None;decision=None;rows=[];payloads={};rawrows=[];seen=set();sequence=0
+    raw=None;decision=None;rows=[];payloads={};rawrows=[];seen=set();seen_full=set();excluded=[];sequence=0
     try:
         while True:
             if raw is None and (OUTPUT/'live-raw.jsonl').exists():raw=(OUTPUT/'live-raw.jsonl').open()
@@ -251,8 +268,14 @@ def collect():
                 if kind=='class_published':
                     if decision is None:
                         decision=json.loads((OUTPUT/'decision.json').read_text());rows.append(decision);append(OUTPUT/'events.jsonl',decision)
-                    require(event['class_id'] not in seen,'duplicate primary class result');seen.add(event['class_id'])
+                    require(event['class_id'] not in seen_full,'duplicate full-logger class result');seen_full.add(event['class_id'])
                     result=result_event(decision,payloads[event['data_sequence']],event,time.time())
+                    if event['class_id'] in EXCLUDED_CLASSES:
+                        result['exclusion_reason']=EXCLUDED_CLASSES[event['class_id']]
+                        excluded.append(result);append(OUTPUT/'excluded-observations.jsonl',result)
+                        continue
+                    require(event['class_id'] in decision['inventory'],'result outside frozen panel')
+                    seen.add(event['class_id'])
                     rows.append(result);append(OUTPUT/'events.jsonl',result)
                 continue
             if process.poll() is not None:break
@@ -266,21 +289,26 @@ def collect():
     require(any(r['event']=='freeze_completed' for r in rawrows),'freeze callback did not complete')
     end=next((r for r in reversed(rawrows) if r['event']=='plan_finished'),None)
     require(end is not None,'full JUnit plan lacks end marker')
+    population=json.loads((OUTPUT/'population.json').read_text())
+    require(seen_full==set(population['full_inventory']),'full logger lacks class observations, including excluded classes')
     receipt=json.loads((OUTPUT/'freeze-receipt.json').read_text())
-    first=min((r['started_at'] for r in rows if r['type']=='result' and r['started_at'] is not None),default=None)
+    first=min((r['started_at'] for r in rows+excluded if r['type']=='result' and r['started_at'] is not None),default=None)
     require(first is None or receipt['persisted_at']<=first,'decision file was not durably frozen before first class')
     freeze_end=next(r['observed_at_epoch_ns']/1e9 for r in rawrows if r['event']=='freeze_completed')
     tail=freeze_end-decision['decision_at']
     require(0<=tail<=receipt['callback_tail_guard_seconds'],'freeze callback exceeded charged tail reserve')
     observed=[r for r in rows if r['type']=='result'];complete=set(seen)==set(decision['inventory']) and all(r['raw_outcome'] in ('passed','failed') for r in observed)
     executed=[r for r in observed if r['started_at'] is not None]
-    leaf_complete=complete and all(sum(r['junit_class_observation'][k] for k in ('tests_aborted','tests_skipped','tests_not_executed'))==0 for r in observed)
-    suite={'schema_version':2,'synthetic':False,'technical_calibration':True,'efficacy_eligible':False,
+    panel_leaf_complete=complete and all(sum(r['junit_class_observation'][k] for k in ('tests_aborted','tests_skipped','tests_not_executed'))==0 for r in observed)
+    leaf_complete=all(r['raw_outcome'] in ('passed','failed') and sum(r['junit_class_observation'][k] for k in ('tests_aborted','tests_skipped','tests_not_executed'))==0 for r in observed+excluded)
+    suite={'schema_version':2,'synthetic':False,'technical_calibration':False,'efficacy_eligible':False,
        'type':'suite_end','id':decision['id']+':end','decision_id':decision['id'],'run_id':decision['run_id'],'commit':decision['commit'],
        'recorded_at':time.time(),'finished_at':end['observed_at_epoch_ns']/1e9,'status':'complete' if complete else 'incomplete',
        'incomplete_reason':None if complete else 'missing, entirely skipped or aborted primary class; retained explicitly',
        'normal_ci_full_suite':True,'execution_harness':'instrumented full JUnit class suite; not untouched upstream Maven CI',
-       'full_known_leaf_coverage':leaf_complete,'result_ids':[r['id'] for r in observed],
+       'population_scope':'predeclared policy/training panel; full original JUnit plan executed',
+       'full_logger_classes_observed':len(seen_full),'excluded_class_ids':[r['test_id'] for r in excluded],
+       'full_known_leaf_coverage':leaf_complete,'panel_known_leaf_coverage':panel_leaf_complete,'result_ids':[r['id'] for r in observed],
        'actual_start_order':[r['test_id'] for r in sorted(executed,key=lambda r:(r['started_at'],r['test_id']))],
        'execution_deviations':'JUnit controls class order; original planned order unexposed; callback fsync overhead included',
        'test_process_exit_code':exit_code}
@@ -288,16 +316,24 @@ def collect():
     prior=json.loads((OUTPUT/'history.json').read_text())
     from validate import validate
     checks=validate(prior+rows)
+    fit_readiness=readiness(prior+rows)
+    write(OUTPUT/'training-readiness.json',fit_readiness)
     state={'signature':meta['signature'],'source_run_id':meta['workflow_run_id'],'source_run_attempt':meta['workflow_run_attempt'],
+           'upstream_source_sha':meta['upstream_source_sha'],'dataset_id':DATASET_ID,
            'source_head_sha':meta['commit'],'events':prior+rows}
     write(OUTPUT/'state.json',state)
     counts={k:sum(r['raw_outcome']==k for r in observed) for k in ('passed','failed','aborted','skipped','error','timed_out')}
-    report={'collection_valid':True,'phase':'technical_calibration','efficacy_eligible':False,'commit':meta['commit'],'upstream_base':UPSTREAM,
+    report={'collection_valid':True,'phase':PHASE,'dataset_id':DATASET_ID,'efficacy_eligible':False,'commit':meta['commit'],'upstream_base':UPSTREAM,
+            'upstream_source_sha':meta['upstream_source_sha'],'population_scope':suite['population_scope'],
             'run_url':meta['github_run_url'],'classes_frozen':len(decision['inventory']),'classes_observed':len(observed),
-            'class_outcomes':counts,'primary_inventory_complete':complete,'full_known_leaf_coverage':leaf_complete,
+            'full_logger_classes_discovered':len(population['full_inventory']),'full_logger_classes_observed':len(seen_full),
+            'excluded_class_outcomes':{k:sum(r['raw_outcome']==k for r in excluded) for k in ('passed','failed','aborted','skipped')},
+            'class_outcomes':counts,'primary_inventory_complete':complete,'full_known_leaf_coverage':leaf_complete,'panel_known_leaf_coverage':panel_leaf_complete,
             'junit_test_counts':{k:sum(r['junit_class_observation'][k] for r in observed) for k in ('tests_succeeded','tests_failed','tests_aborted','tests_skipped','tests_not_executed','tests_dynamic_registered')},
+            'full_logger_junit_test_counts':{k:sum(r['junit_class_observation'][k] for r in observed+excluded) for k in ('tests_succeeded','tests_failed','tests_aborted','tests_skipped','tests_not_executed','tests_dynamic_registered')},
+            'training_readiness_after_collection':fit_readiness,
             'policy_snapshots':len(decision['policies']),'policy_state':decision['policy_state'],'validation':checks,
-            'test_process_exit_code':exit_code,'actual_freeze_callback_tail_s':tail,'charged_callback_tail_guard_s':receipt['callback_tail_guard_seconds'],'measured_full_collector_preparation_s':freeze_end-decision['preparation_started_at'],'cost_note':CONFIG['cost_scope'],'limitations':['technical calibration only; no efficacy comparison','observer overhead included in class durations','unknown planned engine order','class inventory known; dynamic leaf count initially unknown','no reproduced-failure diagnosis']}
+            'test_process_exit_code':exit_code,'actual_freeze_callback_tail_s':tail,'charged_callback_tail_guard_s':receipt['callback_tail_guard_seconds'],'measured_full_collector_preparation_s':freeze_end-decision['preparation_started_at'],'cost_note':CONFIG['cost_scope'],'limitations':['exploratory development/training collection; no efficacy comparison','predeclared panel excludes three assumption-conditional classes; whole-suite raw outcomes retained','observer overhead included in class durations','unknown planned engine order','class inventory known; dynamic leaf count initially unknown','no reproduced-failure diagnosis']}
     write(OUTPUT/'summary.json',report)
     write(OUTPUT/'manifest.json',{'files':{p.name:{'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted(OUTPUT.iterdir()) if p.is_file() and p.name!='manifest.json'}})
     print(json.dumps(report,indent=2))

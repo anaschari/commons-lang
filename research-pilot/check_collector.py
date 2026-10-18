@@ -60,12 +60,14 @@ def history_checks():
   rows=copy.deepcopy(fixture)
   for row in rows:
    row.update(synthetic=False,run_id=f'{rid}-attempt-{attempt}',commit='b'*40)
-   if row['type']=='decision':row['frozen_hashes']['collector']=signature
-  source={'workflow_run_id':rid,'workflow_run_attempt':attempt,'run_id':f'{rid}-attempt-{attempt}','commit':'b'*40,'signature':signature}
+   if row['type']=='decision':
+    row['frozen_hashes']['collector']=signature
+    row.update(upstream_source_sha='b'*40,phase=pilot.PHASE,dataset_id=pilot.DATASET_ID,decision_index=0)
+  source={'workflow_run_id':rid,'workflow_run_attempt':attempt,'run_id':f'{rid}-attempt-{attempt}','commit':'b'*40,'signature':signature,'upstream_source_sha':'b'*40,'configuration':{'dataset_id':pilot.DATASET_ID}}
   files={'metadata.json':json.dumps(source).encode()}
   if complete:
-   files.update({'summary.json':json.dumps({'collection_valid':True,'commit':'b'*40}).encode(),
-                 'state.json':json.dumps({'source_run_id':rid,'source_run_attempt':attempt,'source_head_sha':'b'*40,'signature':signature,'events':rows}).encode(),
+   files.update({'summary.json':json.dumps({'collection_valid':True,'commit':'b'*40,'upstream_source_sha':'b'*40,'dataset_id':pilot.DATASET_ID}).encode(),
+                 'state.json':json.dumps({'source_run_id':rid,'source_run_attempt':attempt,'source_head_sha':'b'*40,'signature':signature,'events':rows,'upstream_source_sha':'b'*40,'dataset_id':pilot.DATASET_ID}).encode(),
                  'events.jsonl':''.join(json.dumps(row)+'\n' for row in rows).encode()})
    manifest={'files':{name:{'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()} for name,data in files.items()}}
    files['manifest.json']=json.dumps(manifest).encode()
@@ -75,7 +77,7 @@ def history_checks():
    for name,data in files.items():z.writestr(name,data)
   return output.getvalue()
  def artifact(ident,rid,attempt,data):
-  return {'id':ident,'created_at':f'2026-10-18T20:00:{ident:02d}Z','name':f'shadow-pilot-v2-state-{attempt}','expired':False,'digest':'sha256:'+hashlib.sha256(data).hexdigest(),
+  return {'id':ident,'created_at':f'2026-10-18T20:00:{ident:02d}Z','name':f'shadow-pilot-v3-state-{attempt}','expired':False,'digest':'sha256:'+hashlib.sha256(data).hexdigest(),
           'workflow_run':{'id':rid,'repository_id':1,'head_repository_id':1,'head_branch':'research/shadow-pilot','head_sha':'b'*40}}
  def exercise(items,blobs,current=(9,1)):
   pages=[{'artifacts':items[:1]},{'artifacts':items[1:]}] if items else [{'artifacts':[]}]
@@ -110,7 +112,9 @@ def history_checks():
  assert len(rows)==4 and proof['artifact_id']==2,'failed latest attempt hid earlier valid collection'
  rows,proof=exercise([],{});assert rows==[] and proof['status']=='no_prior_valid_collection'
  rows,proof=exercise([dict(a,name='shadow-pilot-state-1')],{2:data})
- assert rows==[],'explicit v2 dataset must not inherit v1 calibration'
+ assert rows==[],'explicit training dataset must not inherit old calibration'
+ rows,proof=exercise([dict(a,name='shadow-pilot-v2-state-1')],{2:data})
+ assert rows==[],'explicit v3 dataset must not inherit v2 calibration'
  rows,proof=exercise([later],{3:partial});assert rows==[] and proof['skipped_artifacts'][0]['artifact_id']==3
  for broken,blob in ((dict(a,digest='sha256:'+'0'*64),data),
                      (artifact(4,7,1,archive(7,1,signature='d'*64)),archive(7,1,signature='d'*64)),
