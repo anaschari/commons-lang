@@ -35,7 +35,7 @@ PASSED/FAILED class observations become raw passed/failed. ABORTED and SKIPPED
 remain separate nonbinary outcomes. An entirely skipped class has unknown start
 and runtime, never an invented zero. Leaf assertion/error/skip/abort/unstarted
 counts are retained. Class-level complete means each inventoried class has an
-observed binary result. full_leaf_coverage is a separate stricter field; disabled
+observed binary result. full_known_leaf_coverage is a separate stricter field; disabled
 methods are never silently claimed executed. Missing, skipped or aborted primary
 classes keep suite status incomplete and prevent complete-build training.
 
@@ -76,3 +76,7 @@ under this repository Apache License2.0. The JSONL fixture is listed as a data
 exclusion in the temporary POM because comments would break its event format.
 The temporary POM preserves the original Apache license comment. RAT remains
 enabled. frozen_model.py retains its original research bytes and recorded hash.
+
+Known-leaf coverage concerns discovered/registered leaves only. A failed dynamic
+factory can leave potential unregistered cases unknown; this is not proof of full
+method-level coverage or a complete counterfactual fault oracle.

@@ -29,3 +29,21 @@ skipped=copy.deepcopy(payload);skipped.update(started_at_epoch_ns=None,duration_
 x=result_event(decision,skipped,publication,103.)
 assert x['duration_s'] is None and x['started_at'] is None and x['raw_outcome']=='skipped'
 print('PASS collector publication identity, real availability and unknown skipped duration')
+
+# The overlay must preserve current RAT input exclusions rather than override them.
+from pilot import compile_pom, REPO
+from pathlib import Path
+import tempfile,xml.etree.ElementTree as ET
+with tempfile.TemporaryDirectory() as temp:
+ p=Path(temp);p.joinpath('pom.xml').write_bytes((REPO/'pom.xml').read_bytes())
+ compile_pom(p)
+ text=(p/'.pilot-pom.xml').read_text()
+ ns={'m':'http://maven.apache.org/POM/4.0.0'};tree=ET.fromstring(text)
+ plugin=next(x for x in tree.findall('.//m:plugin',ns) if x.findtext('m:artifactId',namespaces=ns)=='apache-rat-plugin')
+ excludes=[x.text for x in plugin.findall('.//m:inputExclude',ns)]
+ assert 'src/test/resources/lang-708-input.txt' in excludes
+ assert 'src/site/resources/release-notes/RELEASE-NOTES-*.txt' in excludes
+ assert 'research-pilot/synthetic-example.jsonl' in excludes
+ assert not tree.findall('.//m:plugin[m:artifactId="apache-rat-plugin"]/m:configuration/m:excludes',ns)
+ assert '<!--' in text and 'Licensed to the Apache Software Foundation' in text
+print('PASS compile POM preserves current RAT exclusions and license notice')

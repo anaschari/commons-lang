@@ -85,23 +85,22 @@ def prepare():
           'configuration':CONFIG,'signature':sig,'files':files,'environment':env,
           'github_run_url':os.environ['GITHUB_SERVER_URL']+'/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+os.environ['GITHUB_RUN_ID']}
     write(OUTPUT/'metadata.json',meta)
+    compile_pom(REPO)
+    print('Prepared prospective technical collector at',commit)
+
+def compile_pom(repo):
     # A separate POM adds only launcher API to the test classpath. Tracked source/pom stay untouched.
     ns='http://maven.apache.org/POM/4.0.0';ET.register_namespace('',ns)
-    tree=ET.parse(REPO/'pom.xml');deps=tree.getroot().find('{'+ns+'}dependencies')
+    tree=ET.parse(repo/'pom.xml');deps=tree.getroot().find('{'+ns+'}dependencies')
     dep=ET.SubElement(deps,'{'+ns+'}dependency')
     for k,v in [('groupId','org.junit.platform'),('artifactId','junit-platform-launcher'),('scope','test')]:ET.SubElement(dep,'{'+ns+'}'+k).text=v
-    build=tree.getroot().find('{'+ns+'}build'); plugins=build.find('{'+ns+'}plugins')
-    rat=next((p for p in plugins if p.findtext('{'+ns+'}artifactId')=='apache-rat-plugin'),None)
-    if rat is None:
-        rat=ET.SubElement(plugins,'{'+ns+'}plugin')
-        for k,v in [('groupId','org.apache.rat'),('artifactId','apache-rat-plugin')]:ET.SubElement(rat,'{'+ns+'}'+k).text=v
-    configuration=ET.SubElement(rat,'{'+ns+'}configuration')
-    excludes=ET.SubElement(configuration,'{'+ns+'}excludes',{'combine.children':'append'})
-    ET.SubElement(excludes,'{'+ns+'}exclude').text='research-pilot/synthetic-example.jsonl'
+    rat=next(p for p in tree.getroot().findall('.//{'+ns+'}plugin') if p.findtext('{'+ns+'}artifactId')=='apache-rat-plugin')
+    configuration=rat.find('{'+ns+'}configuration')
+    excludes=configuration.find('{'+ns+'}inputExcludes')
+    ET.SubElement(excludes,'{'+ns+'}inputExclude').text='research-pilot/synthetic-example.jsonl'
     # ElementTree omits comments before the root: preserve the original Apache license.
-    original=(REPO/'pom.xml').read_text();license_comment=original[original.index('<!--'):original.index('-->')+3]
-    (REPO/'.pilot-pom.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n'+license_comment+'\n'+ET.tostring(tree.getroot(),encoding='unicode'))
-    print('Prepared prospective technical collector at',commit)
+    original=(repo/'pom.xml').read_text();license_comment=original[original.index('<!--'):original.index('-->')+3]
+    (repo/'.pilot-pom.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n'+license_comment+'\n'+ET.tostring(tree.getroot(),encoding='unicode'))
 
 def restore_history(meta):
     # gh handles the authenticated redirect. Never execute or unpickle artifact contents.
@@ -236,7 +235,7 @@ def collect():
        'recorded_at':time.time(),'finished_at':end['observed_at_epoch_ns']/1e9,'status':'complete' if complete else 'incomplete',
        'incomplete_reason':None if complete else 'missing, entirely skipped or aborted primary class; retained explicitly',
        'normal_ci_full_suite':True,'execution_harness':'instrumented full JUnit class suite; not untouched upstream Maven CI',
-       'full_leaf_coverage':leaf_complete,'result_ids':[r['id'] for r in observed],
+       'full_known_leaf_coverage':leaf_complete,'result_ids':[r['id'] for r in observed],
        'actual_start_order':[r['test_id'] for r in sorted(executed,key=lambda r:(r['started_at'],r['test_id']))],
        'execution_deviations':'JUnit controls class order; original planned order unexposed; callback fsync overhead included',
        'test_process_exit_code':exit_code}
@@ -250,7 +249,7 @@ def collect():
     counts={k:sum(r['raw_outcome']==k for r in observed) for k in ('passed','failed','aborted','skipped','error','timed_out')}
     report={'collection_valid':True,'phase':'technical_calibration','efficacy_eligible':False,'commit':meta['commit'],'upstream_base':UPSTREAM,
             'run_url':meta['github_run_url'],'classes_frozen':len(decision['inventory']),'classes_observed':len(observed),
-            'class_outcomes':counts,'primary_inventory_complete':complete,'full_leaf_coverage':leaf_complete,
+            'class_outcomes':counts,'primary_inventory_complete':complete,'full_known_leaf_coverage':leaf_complete,
             'junit_test_counts':{k:sum(r['junit_class_observation'][k] for r in observed) for k in ('tests_succeeded','tests_failed','tests_aborted','tests_skipped','tests_not_executed','tests_dynamic_registered')},
             'policy_snapshots':len(decision['policies']),'policy_state':decision['policy_state'],'validation':checks,
             'test_process_exit_code':exit_code,'actual_freeze_callback_tail_s':tail,'charged_callback_tail_guard_s':receipt['callback_tail_guard_seconds'],'measured_full_collector_preparation_s':freeze_end-decision['preparation_started_at'],'cost_note':CONFIG['cost_scope'],'limitations':['technical calibration only; no efficacy comparison','observer overhead included in class durations','unknown planned engine order','class inventory known; dynamic leaf count initially unknown','no reproduced-failure diagnosis']}
