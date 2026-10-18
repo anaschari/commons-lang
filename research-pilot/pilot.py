@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+# Copyright 2026 Anas Chari
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Run a prospective class-level technical collector without controlling test order."""
 import argparse
 import hashlib
@@ -76,7 +90,17 @@ def prepare():
     tree=ET.parse(REPO/'pom.xml');deps=tree.getroot().find('{'+ns+'}dependencies')
     dep=ET.SubElement(deps,'{'+ns+'}dependency')
     for k,v in [('groupId','org.junit.platform'),('artifactId','junit-platform-launcher'),('scope','test')]:ET.SubElement(dep,'{'+ns+'}'+k).text=v
-    tree.write(REPO/'.pilot-pom.xml',encoding='utf-8',xml_declaration=True)
+    build=tree.getroot().find('{'+ns+'}build'); plugins=build.find('{'+ns+'}plugins')
+    rat=next((p for p in plugins if p.findtext('{'+ns+'}artifactId')=='apache-rat-plugin'),None)
+    if rat is None:
+        rat=ET.SubElement(plugins,'{'+ns+'}plugin')
+        for k,v in [('groupId','org.apache.rat'),('artifactId','apache-rat-plugin')]:ET.SubElement(rat,'{'+ns+'}'+k).text=v
+    configuration=ET.SubElement(rat,'{'+ns+'}configuration')
+    excludes=ET.SubElement(configuration,'{'+ns+'}excludes',{'combine.children':'append'})
+    ET.SubElement(excludes,'{'+ns+'}exclude').text='research-pilot/synthetic-example.jsonl'
+    # ElementTree omits comments before the root: preserve the original Apache license.
+    original=(REPO/'pom.xml').read_text();license_comment=original[original.index('<!--'):original.index('-->')+3]
+    (REPO/'.pilot-pom.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n'+license_comment+'\n'+ET.tostring(tree.getroot(),encoding='unicode'))
     print('Prepared prospective technical collector at',commit)
 
 def restore_history(meta):

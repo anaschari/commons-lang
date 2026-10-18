@@ -70,3 +70,9 @@ whole collector preparation are measured after execution starts and reported.
 A tail reserve overrun invalidates the technical collection rather than silently
 undercharging a future budget. Dependency installation, compilation and the
 synthetic probe remain separate from decision preparation.
+
+Licensing: new pilot implementation and synthetic JSONL fixture are distributed
+under this repository Apache License2.0. The JSONL fixture is listed as a data
+exclusion in the temporary POM because comments would break its event format.
+The temporary POM preserves the original Apache license comment. RAT remains
+enabled. frozen_model.py retains its original research bytes and recorded hash.
