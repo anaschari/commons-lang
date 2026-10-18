@@ -18,6 +18,11 @@ probe namespace, and runs that entire plan with Jupiter's own order. Java21 need
 no project-specific JDK15 class exclusion. This harness uses the project's Java9
 module opens, Java21 agent flag and 1GB heap. It is an experimental runner
 configuration; its timings are not untouched upstream Maven CI timings.
+After the entire TestPlan and final listener callbacks finish, the launcher exits
+explicitly: some original tests leave non-daemon executor threads alive. The
+separate synthetic probe verifies this exit preserves test cleanup and evidence.
+The suite step has a 20-minute limit inside a 25-minute job, leaving time to retain
+incomplete evidence if execution times out. A timeout is never a complete build.
 
 The entity is the outermost ClassSource container. Nested and dynamic descendants
 roll into that class. The class inventory is frozen in the TestPlan callback before
@@ -54,15 +59,20 @@ order and honest skipped/aborted class timing. Run local checks with Python3:
   python research-pilot/policies.py --self-check
 The scoring check needs requirements.txt. The JVM probe runs inside Actions.
 
-History comes only from a successful collection workflow in this repository and
-branch, an ancestor commit, an archive matching GitHub's SHA256 digest, and an
-identical collector/config signature. It rejects synthetic history and validates
-all references before scoring. Workflow completion never filters out failed tests.
+History comes only from a verified valid collection artifact in this repository
+and branch, an ancestor commit, an archive matching GitHub's SHA256 digest, and an
+identical collector/config signature. Artifacts are checked by immutable attempt,
+independently of a run's mutable conclusion, so rerunning a workflow cannot erase
+an earlier valid attempt. It rejects synthetic history and validates all references
+before scoring. Workflow completion never filters out failed tests.
 A collector/config change requires a separately recorded dataset; it must not
 silently inherit incompatible observations. Artifacts expire after 30 days: download
 and preserve them for research. No publication or failure-diagnosis rule is inferred
 from file modification times or build start+duration. No nonflaky diagnosis, model
 superiority, production saving or confirmatory validation is established.
+History exports have a 1GB safety ceiling. Reaching that ceiling stops collection
+instead of silently discarding observations; a larger archival design then needs
+an explicit versioned change.
 
 Measured policy component totals and the conservative one second callback tail
 reserve are separate. preparation_charged_s adds both; actual callback tail and

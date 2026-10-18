@@ -49,6 +49,7 @@ jobs:
       - name: Verify live listener on deliberate synthetic failures
         run: java -cp "target/test-classes:target/classes:$(cat target/pilot-classpath.txt)" org.researchpilot.ListenerSelfCheck target/listener-self-check
       - name: Run full instrumented class suite and retain every outcome
+        timeout-minutes: 20
         env:
           GH_TOKEN: ${{ github.token }}
         run: python research-pilot/pilot.py run

@@ -23,7 +23,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
+
+import javax.tools.JavaCompiler;
+import javax.tools.ToolProvider;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
@@ -33,7 +38,10 @@ import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
+import org.junit.platform.engine.TestExecutionResult;
 import org.junit.platform.launcher.Launcher;
+import org.junit.platform.launcher.TestExecutionListener;
+import org.junit.platform.launcher.TestIdentifier;
 import org.junit.platform.launcher.core.LauncherConfig;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
 import org.junit.platform.launcher.core.LauncherFactory;
@@ -50,16 +58,26 @@ public final class ListenerSelfCheck {
                 + "assert 'class_started' not in (p/'live-raw.jsonl').read_text(); "
                 + "(p/'freeze.marker').write_text('frozen before execution')";
         final ShadowListener listener = new ShadowListener(output, Arrays.asList("python3", "-c", callback));
+        final AtomicBoolean interruptedCallbackPreserved = new AtomicBoolean();
         final Launcher launcher = LauncherFactory.create(LauncherConfig.builder()
                 .enableTestExecutionListenerAutoRegistration(false).build());
-        launcher.registerTestExecutionListeners(listener);
+        // Finish callbacks run in reverse registration order: observe after the durable listener write.
+        launcher.registerTestExecutionListeners(new TestExecutionListener() {
+            @Override
+            public void executionFinished(final TestIdentifier id, final TestExecutionResult result) {
+                if (id.getDisplayName().equals("leavesInterruptSet()")) {
+                    interruptedCallbackPreserved.set(Thread.currentThread().isInterrupted());
+                }
+            }
+        }, listener);
         launcher.execute(LauncherDiscoveryRequestBuilder.request()
                 .selectors(selectClass(MixedFixture.class), selectClass(DisabledFixture.class),
                         selectClass(FailedSetupFixture.class))
                 .configurationParameter("junit.jupiter.execution.parallel.enabled", "false").build());
+        require(interruptedCallbackPreserved.get(), "Durable callback write must preserve the test thread interrupt flag");
         final List<String> lines = Files.readAllLines(output.resolve("live-raw.jsonl"), StandardCharsets.UTF_8);
         final String mixed = result(lines, MixedFixture.class);
-        require(mixed.contains("\"outcome\":\"FAILED\"") && mixed.contains("\"tests_succeeded\":3")
+        require(mixed.contains("\"outcome\":\"FAILED\"") && mixed.contains("\"tests_succeeded\":4")
                 && mixed.contains("\"tests_failed\":2") && mixed.contains("\"tests_aborted\":1")
                 && mixed.contains("\"tests_skipped\":2") && mixed.contains("\"tests_dynamic_registered\":2"), mixed);
         require(result(lines, DisabledFixture.class).contains("\"outcome\":\"SKIPPED\""), "disabled class");
@@ -80,6 +98,8 @@ public final class ListenerSelfCheck {
             }
         }
         require(finished == 3 && published == 3, "three top class results, each published after durable data");
+        require(lines.get(lines.size() - 1).contains("\"event\":\"plan_finished\""),
+                "Writes after an interrupted callback must survive through complete plan publication");
         final String timingCheck = "import json,pathlib,sys\n"
                 + "p=pathlib.Path(sys.argv[1]); rows=[json.loads(s) for s in (p/'live-raw.jsonl').read_text().splitlines()]\n"
                 + "assert [r['sequence'] for r in rows]==list(range(1,len(rows)+1))\n"
@@ -96,7 +116,56 @@ public final class ListenerSelfCheck {
                 + "assert all(r['sequence']>freeze['sequence'] for r in rows if r['event']=='class_started')\n";
         require(new ProcessBuilder("python3", "-c", timingCheck, output.toString()).inheritIO().start().waitFor() == 0,
                 "durable publication references and monotonic/epoch duration agreement");
-        System.out.println("Listener self-check passed: nested/dynamic mapping, failures, aborts, skips, freeze, publication.");
+        checkSuccessfulLauncherExit(output);
+        System.out.println("Listener self-check passed: mapping, outcomes, freeze, durable publication, and leaked-thread process exit.");
+    }
+
+    private static void checkSuccessfulLauncherExit(final Path output) throws Exception {
+        final Path classes = Files.createDirectories(output.resolve("exit-probe-classes"));
+        final Path evidence = output.resolve("exit-probe-evidence");
+        final Path source = output.resolve("ExitTest.java");
+        final String fixture = "package org.pilotfixture; public class ExitTest {"
+                + " @org.junit.jupiter.api.Test void passesWithLeakedThread() throws Exception {"
+                + " org.junit.jupiter.api.Assertions.assertTrue(java.nio.file.Files.exists("
+                + "java.nio.file.Paths.get(System.getenv(\"PILOT_OUTPUT_DIR\"),\"frozen\")));"
+                + " Thread worker=new Thread(() -> { try { new java.util.concurrent.CountDownLatch(1).await(); }"
+                + " catch(InterruptedException e) { Thread.currentThread().interrupt(); } },\"synthetic-leaked-worker\");"
+                + " worker.setDaemon(false); worker.start();"
+                + " org.junit.jupiter.api.Assertions.assertTrue(worker.isAlive()); }"
+                + " @org.junit.jupiter.api.AfterAll static void completed() throws Exception {"
+                + " java.nio.file.Files.write(java.nio.file.Paths.get(System.getenv(\"PILOT_OUTPUT_DIR\"),"
+                + "\"after-all-completed\"),new byte[]{1}); } }";
+        Files.write(source, fixture.getBytes(StandardCharsets.UTF_8));
+        final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        require(compiler != null, "Exit regression probe requires the JDK compiler");
+        require(compiler.run(null, null, null, "-classpath", System.getProperty("java.class.path"),
+                "-d", classes.toString(), source.toString()) == 0, "Compile isolated passing exit fixture");
+        final Path bridgeScript = output.resolve("exit-probe-bridge.py");
+        Files.write(bridgeScript, Arrays.asList("import json,pathlib,sys",
+                "p=pathlib.Path(sys.argv[-1])",
+                "assert len(json.loads((p/'inventory.json').read_text())['classes'])==1",
+                "(p/'frozen').write_text('frozen before execution')"), StandardCharsets.UTF_8);
+        final Path log = output.resolve("exit-probe.log");
+        final ProcessBuilder command = new ProcessBuilder(Paths.get(System.getProperty("java.home"), "bin", "java").toString(),
+                "-cp", classes + System.getProperty("path.separator") + System.getProperty("java.class.path"),
+                "org.researchpilot.PilotLauncher", classes.toString()).redirectErrorStream(true).redirectOutput(log.toFile());
+        command.environment().put("PILOT_OUTPUT_DIR", evidence.toString());
+        command.environment().put("PILOT_BRIDGE_SCRIPT", bridgeScript.toString());
+        command.environment().put("PILOT_PYTHON", System.getenv().getOrDefault("PILOT_PYTHON", "python3"));
+        final Process process = command.start();
+        if (!process.waitFor(30, TimeUnit.SECONDS)) {
+            process.destroyForcibly();
+            process.waitFor(5, TimeUnit.SECONDS);
+            throw new AssertionError("Successful launcher did not exit with a live non-daemon test thread; see " + log);
+        }
+        require(process.exitValue() == 0, "Passing launcher exit code; see " + log);
+        require(Files.exists(evidence.resolve("after-all-completed")), "Exit must follow full test lifecycle");
+        final String events = new String(Files.readAllBytes(evidence.resolve("live-raw.jsonl")), StandardCharsets.UTF_8);
+        require(events.contains("\"event\":\"class_published\"") && events.contains("\"event\":\"plan_finished\"")
+                && !events.contains("\"event\":\"collection_error\""), "Exit must follow durable result and plan completion");
+        final String summary = new String(Files.readAllBytes(log), StandardCharsets.UTF_8);
+        require(summary.contains("PILOT_SUITE found=1 started=1 succeeded=1 failed=0 aborted=0 skipped=0 container_failures=0"),
+                "Exit must follow complete, flushed suite summary; see " + log);
     }
 
     private static String result(final List<String> lines, final Class<?> fixture) {
@@ -114,6 +183,7 @@ public final class ListenerSelfCheck {
     static class MixedFixture {
         @BeforeAll static void gate() { Assertions.assertTrue(Files.exists(marker)); }
         @Test void pass() { }
+        @Test void leavesInterruptSet() { Thread.currentThread().interrupt(); }
         @Test void fail() { Assertions.fail("deliberate synthetic failure"); }
         @Test void abort() { Assumptions.assumeTrue(false, "deliberate synthetic abort"); }
         @Disabled @Test void skipped() { Assertions.fail("must not execute"); }

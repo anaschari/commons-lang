@@ -15,14 +15,12 @@
  */
 package org.researchpilot;
 
+import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -50,7 +48,7 @@ public final class ShadowListener implements TestExecutionListener {
     private final long anchorMonotonic = System.nanoTime();
     private final long anchorEpoch = System.currentTimeMillis() * 1_000_000L;
     private final long anchorSampleAfter = System.nanoTime();
-    private FileChannel raw;
+    private FileOutputStream raw;
     private TestPlan plan;
     private long sequence;
     private long startIndex;
@@ -92,8 +90,7 @@ public final class ShadowListener implements TestExecutionListener {
             if (!requested.toRealPath().startsWith(target.toRealPath())) {
                 throw new IOException("Pilot output symlink escapes target");
             }
-            raw = FileChannel.open(requested.resolve("live-raw.jsonl"), StandardOpenOption.CREATE_NEW,
-                    StandardOpenOption.WRITE);
+            raw = createOutput(requested.resolve("live-raw.jsonl"));
             plan = testPlan;
             for (final TestIdentifier root : plan.getRoots()) {
                 index(root, null);
@@ -116,8 +113,7 @@ public final class ShadowListener implements TestExecutionListener {
                     "duration_scope", "top class start-to-finish callbacks including instrumentation overhead");
             document.put("inventory_at_epoch_ns", epoch(System.nanoTime()));
             final Path inventoryPath = requested.resolve("inventory.json");
-            try (FileChannel inventoryFile = FileChannel.open(inventoryPath, StandardOpenOption.CREATE_NEW,
-                    StandardOpenOption.WRITE)) {
+            try (FileOutputStream inventoryFile = createOutput(inventoryPath)) {
                 durableWrite(inventoryFile, json(document) + "\n");
             }
             emit("inventory_published", fields("inventory_path", inventoryPath.toString(),
@@ -345,12 +341,17 @@ public final class ShadowListener implements TestExecutionListener {
         return anchorEpoch + monotonic - anchorMonotonic;
     }
 
-    private static void durableWrite(final FileChannel channel, final String text) throws IOException {
-        final ByteBuffer bytes = StandardCharsets.UTF_8.encode(text);
-        while (bytes.hasRemaining()) {
-            channel.write(bytes);
+    private static FileOutputStream createOutput(final Path path) throws IOException {
+        if (!path.toFile().createNewFile()) {
+            throw new IOException("Refusing to overwrite existing pilot evidence: " + path);
         }
-        channel.force(true);
+        return new FileOutputStream(path.toFile(), true);
+    }
+
+    private static void durableWrite(final FileOutputStream stream, final String text) throws IOException {
+        // FileChannel closes on an interrupted test thread; stream I/O preserves its flag and the shared log.
+        stream.write(text.getBytes(StandardCharsets.UTF_8));
+        stream.getFD().sync();
     }
 
     private static Map<String, Object> fields(final Object... pairs) {

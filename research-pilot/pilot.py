@@ -103,30 +103,74 @@ def compile_pom(repo):
     (repo/'.pilot-pom.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n'+license_comment+'\n'+ET.tostring(tree.getroot(),encoding='unicode'))
 
 def restore_history(meta):
-    # gh handles the authenticated redirect. Never execute or unpickle artifact contents.
+    # Run conclusions change on rerun. Select immutable collection artifacts instead.
+    import re
     repo='anaschari/commons-lang'
-    candidates=json.loads(run_text(['gh','run','list','--repo',repo,'--workflow','shadow-pilot.yml','--branch','research/shadow-pilot','--status','success','--limit','1','--json','databaseId,headSha']))
-    prior=[];provenance={'status':'no_prior_successful_collection'}
-    if candidates:
-        c=candidates[0];rid=c['databaseId']
-        run=json.loads(run_text(['gh','api',f'repos/{repo}/actions/runs/{rid}']))
-        require(run['repository']['full_name']==repo and run['head_branch']=='research/shadow-pilot' and run['path']=='.github/workflows/shadow-pilot.yml','prior workflow identity mismatch')
-        subprocess.run(['git','merge-base','--is-ancestor',c['headSha'],meta['commit']],cwd=REPO,check=True)
-        arts=json.loads(run_text(['gh','api',f'repos/{repo}/actions/runs/{rid}/artifacts']))['artifacts']
-        a=next(x for x in arts if x['name']=='shadow-pilot-state-'+str(run['run_attempt']) and not x['expired'])
+    pages=json.loads(run_text(['gh','api','--paginate','--slurp',f'repos/{repo}/actions/artifacts?per_page=100']))
+    artifacts=sorted((a for page in pages for a in page['artifacts']),key=lambda a:a['id'],reverse=True)
+    prior=[];skipped=[];provenance={'status':'no_prior_valid_collection'}
+    for artifact in artifacts:
+        match=re.fullmatch(r'shadow-pilot-state-([1-9][0-9]*)',artifact['name'])
+        if match is None:continue
+        source=artifact['workflow_run'];rid=source['id'];attempt=int(match.group(1))
+        if source['head_branch']!='research/shadow-pilot':continue
+        if rid==meta['workflow_run_id'] and attempt>=meta['workflow_run_attempt']:continue
+        run=json.loads(run_text(['gh','api',f'repos/{repo}/actions/runs/{rid}/attempts/{attempt}']))
+        if run['path']!='.github/workflows/shadow-pilot.yml':continue
+        require(run['repository']['full_name']==repo and run['head_branch']=='research/shadow-pilot'
+                and run['id']==rid and run['run_attempt']==attempt and run['status']=='completed',
+                'prior workflow attempt identity/status mismatch')
+        require(source['repository_id']==source['head_repository_id']==run['repository']['id']
+                and source['head_sha']==run['head_sha'],'prior artifact source identity mismatch')
+        require(not artifact['expired'],'prior collection artifact expired: explicit dataset decision required')
         dest=OUTPUT/'prior-artifact.zip'
-        with dest.open('wb') as f:subprocess.run(['gh','api',f'repos/{repo}/actions/artifacts/{a["id"]}/zip'],stdout=f,cwd=REPO,check=True)
-        require(a.get('digest')=='sha256:'+sha(dest),'prior artifact digest mismatch or unavailable')
+        with dest.open('wb') as f:
+            subprocess.run(['gh','api',f'repos/{repo}/actions/artifacts/{artifact["id"]}/zip'],stdout=f,cwd=REPO,check=True)
+        require(artifact.get('digest')=='sha256:'+sha(dest),'prior artifact digest mismatch or unavailable')
         with zipfile.ZipFile(dest) as z:
-            require(z.getinfo('state.json').file_size<100_000_000,'history export too large for pilot')
-            state=json.loads(z.read('state.json'))
-        require(state['source_run_id']==rid and state['source_head_sha']==c['headSha'] and state['source_run_attempt']==run['run_attempt'],'prior source identity mismatch')
-        require(state['signature']==meta['signature'],'collector/configuration changed: start a separately recorded dataset')
+            names=z.namelist();require(len(names)==len(set(names)),'duplicate prior archive member')
+            if 'summary.json' not in names:
+                skipped.append({'artifact_id':artifact['id'],'source_run_id':rid,'source_run_attempt':attempt,
+                                'reason':'no committed collection summary; raw/pre-test attempt retained separately'})
+                dest.unlink();continue
+            summary=json.loads(z.read('summary.json'))
+            if summary.get('collection_valid') is not True:
+                skipped.append({'artifact_id':artifact['id'],'source_run_id':rid,'source_run_attempt':attempt,
+                                'reason':'collection explicitly invalid'})
+                dest.unlink();continue
+            require(all(name in names for name in ('manifest.json','state.json','metadata.json','events.jsonl')),
+                    'valid prior collection lacks manifest/state/metadata/events')
+            manifest=json.loads(z.read('manifest.json'))['files']
+            require(all(name in manifest for name in ('state.json','summary.json','metadata.json','events.jsonl')),
+                    'prior manifest omits required collection evidence')
+            for name,item in manifest.items():
+                require(Path(name).name==name and name in names,'prior manifest member mismatch')
+                require(z.getinfo(name).file_size==item['bytes'],'prior manifest size mismatch')
+                with z.open(name) as f:
+                    hashed=hashlib.sha256()
+                    for block in iter(lambda:f.read(1_048_576),b''):hashed.update(block)
+                require(hashed.hexdigest()==item['sha256'],'prior manifest hash mismatch')
+            # ponytail: cumulative JSON stops at 1GB; version the archive design if it reaches this ceiling.
+            require(z.getinfo('state.json').file_size<1_000_000_000,'history export too large for pilot')
+            state=json.loads(z.read('state.json'));metadata=json.loads(z.read('metadata.json'))
+        require(state['source_run_id']==metadata['workflow_run_id']==rid
+                and state['source_run_attempt']==metadata['workflow_run_attempt']==attempt
+                and state['source_head_sha']==metadata['commit']==summary['commit']==run['head_sha']
+                and metadata['run_id']==f'{rid}-attempt-{attempt}','prior collection source identity mismatch')
+        require(state['signature']==metadata['signature']==meta['signature'],
+                'collector/configuration changed: explicit separate dataset decision required')
+        subprocess.run(['git','merge-base','--is-ancestor',run['head_sha'],meta['commit']],cwd=REPO,check=True)
         prior=state['events'];require(all(r['synthetic'] is False for r in prior),'synthetic history is inadmissible')
         from validate import validate
         validate(prior)
-        provenance={'status':'restored','source_run_id':rid,'head_sha':c['headSha'],'artifact_id':a['id'],'archive_sha256':sha(dest),'event_count':len(prior)}
-        dest.unlink()
+        decisions=[r for r in prior if r['type']=='decision']
+        require(decisions[-1]['run_id']==metadata['run_id'] and decisions[-1]['commit']==run['head_sha']
+                and all(r['frozen_hashes']['collector']==meta['signature'] for r in decisions),
+                'prior history does not end at declared source or mixes collector signatures')
+        provenance={'status':'restored','source_run_id':rid,'source_run_attempt':attempt,'head_sha':run['head_sha'],
+                    'artifact_id':artifact['id'],'archive_sha256':sha(dest),'event_count':len(prior)}
+        dest.unlink();break
+    provenance['skipped_artifacts']=skipped
     write(OUTPUT/'history.json',prior);write(OUTPUT/'history-provenance.json',provenance)
 
 def freeze(inventory_path,output):

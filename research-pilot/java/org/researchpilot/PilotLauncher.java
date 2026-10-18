@@ -61,8 +61,7 @@ public final class PilotLauncher {
                 summary.getTestsFailedCount(), summary.getTestsAbortedCount(), summary.getTestsSkippedCount(),
                 summary.getContainersFailedCount());
         writer.flush();
-        if (summary.getTotalFailureCount() > 0) {
-            System.exit(1);
-        }
+        // All callbacks are complete; upstream tests can leave non-daemon executor threads alive.
+        System.exit(summary.getTotalFailureCount() > 0 ? 1 : 0);
     }
 }
