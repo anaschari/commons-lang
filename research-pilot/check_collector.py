@@ -75,7 +75,7 @@ def history_checks():
    for name,data in files.items():z.writestr(name,data)
   return output.getvalue()
  def artifact(ident,rid,attempt,data):
-  return {'id':ident,'name':f'shadow-pilot-state-{attempt}','expired':False,'digest':'sha256:'+hashlib.sha256(data).hexdigest(),
+  return {'id':ident,'created_at':f'2026-10-18T20:00:{ident:02d}Z','name':f'shadow-pilot-v2-state-{attempt}','expired':False,'digest':'sha256:'+hashlib.sha256(data).hexdigest(),
           'workflow_run':{'id':rid,'repository_id':1,'head_repository_id':1,'head_branch':'research/shadow-pilot','head_sha':'b'*40}}
  def exercise(items,blobs,current=(9,1)):
   pages=[{'artifacts':items[:1]},{'artifacts':items[1:]}] if items else [{'artifacts':[]}]
@@ -99,6 +99,9 @@ def history_checks():
  data=archive(7,1);a=artifact(2,7,1,data)
  rows,proof=exercise([a],{2:data},current=(7,2))
  assert len(rows)==4 and proof['source_run_id']==7 and proof['source_run_attempt']==1,'rerun lost prior admitted attempt'
+ older=archive(6,1);older_artifact=dict(artifact(99,6,1,older),created_at='2026-10-18T19:00:00Z')
+ rows,proof=exercise([a,older_artifact],{2:data,99:older})
+ assert proof['source_run_id']==7,'artifact IDs are not chronological; newest published state must win'
  partial=archive(7,2,complete=False);later=artifact(3,7,2,partial)
  self_data=archive(7,2);self_artifact=artifact(8,7,2,self_data)
  rows,proof=exercise([self_artifact,a],{8:self_data,2:data},current=(7,2))
@@ -106,6 +109,8 @@ def history_checks():
  rows,proof=exercise([later,a],{3:partial,2:data})
  assert len(rows)==4 and proof['artifact_id']==2,'failed latest attempt hid earlier valid collection'
  rows,proof=exercise([],{});assert rows==[] and proof['status']=='no_prior_valid_collection'
+ rows,proof=exercise([dict(a,name='shadow-pilot-state-1')],{2:data})
+ assert rows==[],'explicit v2 dataset must not inherit v1 calibration'
  rows,proof=exercise([later],{3:partial});assert rows==[] and proof['skipped_artifacts'][0]['artifact_id']==3
  for broken,blob in ((dict(a,digest='sha256:'+'0'*64),data),
                      (artifact(4,7,1,archive(7,1,signature='d'*64)),archive(7,1,signature='d'*64)),
@@ -115,6 +120,6 @@ def history_checks():
   try:exercise([broken,a],{2:data,broken['id']:blob})
   except ValueError:pass
   else:raise AssertionError('corrupt/incompatible signed history silently became bootstrap')
- print('PASS artifact history: pagination, reruns, failed attempts, pre-test exports, digest/manifest/signature fail closed')
+ print('PASS artifact history: publication chronology, pagination, reruns, failed attempts, pre-test exports, digest/manifest/signature fail closed')
 
 history_checks()

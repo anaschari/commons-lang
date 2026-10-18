@@ -65,6 +65,12 @@ identical collector/config signature. Artifacts are checked by immutable attempt
 independently of a run's mutable conclusion, so rerunning a workflow cannot erase
 an earlier valid attempt. It rejects synthetic history and validates all references
 before scoring. Workflow completion never filters out failed tests.
+A new dataset, commons-lang-technical-20261018-v2, uses shadow-pilot-v2-state-N
+artifacts. Earlier calibration attempts remain archived separately. Version1's
+first valid collection exposed that GitHub artifact IDs are not chronological;
+v2 orders candidates by GitHub publication time, with immutable attempt checks.
+This version change resets history explicitly and does not change any policy,
+model, original test, or failure label to improve comparative results.
 A collector/config change requires a separately recorded dataset; it must not
 silently inherit incompatible observations. Artifacts expire after 30 days: download
 and preserve them for research. No publication or failure-diagnosis rule is inferred

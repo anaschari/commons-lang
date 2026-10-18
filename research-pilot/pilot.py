@@ -34,6 +34,7 @@ OUTPUT=REPO/'target/pilot'
 UPSTREAM='c89cdf682fe21b0c39759cf58186ed5336a105d4'
 ENVIRONMENT='ubuntu-24.04-temurin-21-python-3.12-single-junit-class-slot'
 CONFIG={'schema_version':2,'project':'commons-lang','phase':'technical_calibration',
+        'dataset_id':'commons-lang-technical-20261018-v2',
         'efficacy_eligible':False,'unit':'outermost JUnit ClassSource container',
         'upstream_base':UPSTREAM,'budgets':[.1,.2,.3],
         'full_suite':True,'jupiter_parallel':False,'heap':'-Xmx1G',
@@ -107,10 +108,10 @@ def restore_history(meta):
     import re
     repo='anaschari/commons-lang'
     pages=json.loads(run_text(['gh','api','--paginate','--slurp',f'repos/{repo}/actions/artifacts?per_page=100']))
-    artifacts=sorted((a for page in pages for a in page['artifacts']),key=lambda a:a['id'],reverse=True)
+    artifacts=sorted((a for page in pages for a in page['artifacts']),key=lambda a:(a['created_at'],a['id']),reverse=True)
     prior=[];skipped=[];provenance={'status':'no_prior_valid_collection'}
     for artifact in artifacts:
-        match=re.fullmatch(r'shadow-pilot-state-([1-9][0-9]*)',artifact['name'])
+        match=re.fullmatch(r'shadow-pilot-v2-state-([1-9][0-9]*)',artifact['name'])
         if match is None:continue
         source=artifact['workflow_run'];rid=source['id'];attempt=int(match.group(1))
         if source['head_branch']!='research/shadow-pilot':continue
