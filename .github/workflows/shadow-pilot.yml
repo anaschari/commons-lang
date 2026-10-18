@@ -1,0 +1,72 @@
+name: Prospective shadow pilot
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: research-shadow-pilot
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      NUMEXPR_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: research-pilot/requirements.txt
+      - name: Install frozen scoring dependencies
+        run: python -m pip install -r research-pilot/requirements.txt
+      - name: Check collection and policy boundaries on synthetic data
+        run: |
+          python research-pilot/check_collector.py
+          python research-pilot/validate.py --self-check
+          python research-pilot/policies.py --self-check
+      - name: Prepare immutable collection metadata
+        run: python research-pilot/pilot.py prepare
+      - name: Compile unchanged project tests and listener
+        run: |
+          mvn -f .pilot-pom.xml --batch-mode --no-transfer-progress test-compile dependency:build-classpath -Dmdep.outputFile=target/pilot-classpath.txt -DincludeScope=test > target/compile.log 2>&1
+          javac --release 8 -cp "target/test-classes:target/classes:$(cat target/pilot-classpath.txt)" -d target/test-classes research-pilot/java/org/researchpilot/*.java
+          mkdir -p target/test-classes/META-INF/services
+          cp research-pilot/java/META-INF/services/org.junit.platform.launcher.TestExecutionListener target/test-classes/META-INF/services/
+      - name: Verify live listener on deliberate synthetic failures
+        run: java -cp "target/test-classes:target/classes:$(cat target/pilot-classpath.txt)" org.researchpilot.ListenerSelfCheck target/listener-self-check
+      - name: Run full instrumented class suite and retain every outcome
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python research-pilot/pilot.py run
+      - name: Upload collection evidence even on a failed technical check
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: shadow-pilot-state-${{ github.run_attempt }}
+          path: target/pilot/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Upload separate synthetic probe and compilation log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: technical-checks-${{ github.run_attempt }}
+          path: |
+            target/compile.log
+            target/listener-self-check/
+          if-no-files-found: warn
+          retention-days: 30
